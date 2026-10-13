@@ -1,10 +1,13 @@
 import java.awt.*;
 import java.util.ArrayList;
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 
 // Common screen used by Patients, Doctors, Appointments, Medicines, Equipment and Employees.
-// It shows a form (Add / Clear / Delete) and a table. Data is saved in a CSV file.
+// It shows a form (Add / Clear / Delete) and a table. Data is saved in the SQLite database.
 public class ManageFrame extends JFrame {
 
     private String[] columns;      // column names, e.g. ID, Name, Age...
@@ -14,6 +17,9 @@ public class ManageFrame extends JFrame {
     private JTextField[] fields;
     private DefaultTableModel model;
     private JTable table;
+    private TableRowSorter<DefaultTableModel> sorter; // used for searching
+    private JComboBox<String> searchColumn;
+    private JTextField searchField;
 
     public ManageFrame(String title, String[] columns, String fileName, int[] numberColumns) {
         this.columns = columns;
@@ -58,9 +64,28 @@ public class ManageFrame extends JFrame {
             }
         };
         table = new JTable(model);
+        sorter = new TableRowSorter<>(model);
+        table.setRowSorter(sorter);
+
+        // ----- Search bar (above the table) -----
+        String[] searchOptions = new String[columns.length + 1];
+        searchOptions[0] = "All Columns";
+        for (int i = 0; i < columns.length; i++) {
+            searchOptions[i + 1] = columns[i];
+        }
+        searchColumn = new JComboBox<>(searchOptions);
+        searchField = new JTextField(15);
+        JButton clearSearchButton = new JButton("Clear Search");
+
+        JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        searchPanel.add(new JLabel("Search in:"));
+        searchPanel.add(searchColumn);
+        searchPanel.add(searchField);
+        searchPanel.add(clearSearchButton);
 
         JPanel tablePanel = new JPanel(new BorderLayout());
         tablePanel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 10));
+        tablePanel.add(searchPanel, BorderLayout.NORTH);
         tablePanel.add(new JScrollPane(table), BorderLayout.CENTER);
 
         add(leftPanel, BorderLayout.WEST);
@@ -73,6 +98,31 @@ public class ManageFrame extends JFrame {
         addButton.addActionListener(e -> addRecord());
         clearButton.addActionListener(e -> clearFields());
         deleteButton.addActionListener(e -> deleteRecord());
+
+        // ----- Search actions (table filters while you type) -----
+        searchField.getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent e) { applySearch(); }
+            public void removeUpdate(DocumentEvent e) { applySearch(); }
+            public void changedUpdate(DocumentEvent e) { applySearch(); }
+        });
+        searchColumn.addActionListener(e -> applySearch());
+        clearSearchButton.addActionListener(e -> searchField.setText(""));
+    }
+
+    // Show only the rows that contain the search text (not case sensitive)
+    private void applySearch() {
+        String text = searchField.getText().trim();
+        if (text.isEmpty()) {
+            sorter.setRowFilter(null); // show everything
+            return;
+        }
+        String pattern = "(?i)" + java.util.regex.Pattern.quote(text);
+        int selected = searchColumn.getSelectedIndex();
+        if (selected == 0) {
+            sorter.setRowFilter(RowFilter.regexFilter(pattern)); // all columns
+        } else {
+            sorter.setRowFilter(RowFilter.regexFilter(pattern, selected - 1));
+        }
     }
 
     private void addRecord() {
@@ -119,7 +169,7 @@ public class ManageFrame extends JFrame {
         int choice = JOptionPane.showConfirmDialog(this, "Delete the selected record?",
                 "Confirm Delete", JOptionPane.YES_NO_OPTION);
         if (choice == JOptionPane.YES_OPTION) {
-            model.removeRow(row);
+            model.removeRow(table.convertRowIndexToModel(row));
             saveData();
         }
     }
